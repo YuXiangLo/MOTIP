@@ -8,6 +8,7 @@ from collections import defaultdict
 from torch.utils.data import Dataset
 from PIL import Image
 
+from .oinktrack import OinkTrack
 from .dancetrack import DanceTrack
 from .sportsmot import SportsMOT
 from .crowdhuman import CrowdHuman
@@ -15,6 +16,7 @@ from .bft import BFT
 
 
 dataset_classes = {
+    "OinkTrack": OinkTrack,
     "DanceTrack": DanceTrack,
     "SportsMOT": SportsMOT,
     "CrowdHuman": CrowdHuman,
