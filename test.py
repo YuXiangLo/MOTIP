@@ -27,7 +27,7 @@ def main():
     parser.add_argument(
         "--config-file", 
         required=False, 
-        help="path to config .yml",
+        help="path to config.yml",
         default='/home/b08901172/.yuxiang/OinkTrack-reid-logs/config.yaml'
     )
     parser.add_argument(

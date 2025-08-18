@@ -28,6 +28,8 @@ from models.misc import get_model
 from utils.nested_tensor import NestedTensor
 from submit_and_evaluate import submit_and_evaluate_one_model
 
+from utils.save_image_with_boxes import save_image_with_boxes
+
 
 def train_engine(config: dict):
     # Init some settings:
@@ -308,11 +310,16 @@ def train_one_epoch(
 
     for step, samples in enumerate(dataloader):
         images, annotations, metas = samples["images"], samples["annotations"], samples["metas"]
+        # images.tensors: torch.Size([1, 30, 3, 768, 1365]), images.mask: torch.Size([1, 30, 768, 1365])
+        # annotations: 1 batches, each batch has 30 frames.
+        # metas: 1 batches, each batch has 30 frames.
+
         # Normalize the images:
         # (Normally, it should be done in the dataloader, but here we do it in the training loop (on cuda).)
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         images.tensors = v2.functional.to_dtype(images.tensors, dtype=torch.float32, scale=True)
+        orig_images = images.tensors.clone()
         images.tensors = v2.functional.normalize(images.tensors, mean=mean, std=std)
         # A hack implementation to recover 0.0 in the masked regions:
         images.tensors = images.tensors * (~images.mask[:, :, None, ...]).to(torch.float32)
@@ -357,6 +364,7 @@ def train_one_epoch(
 
         # Prepare for the DETR forward function, turn the (B, T, ...) images to (B*T, ...) (or said flatten):
         detr_train_frames.tensors = einops.rearrange(detr_train_frames.tensors, "b t c h w -> (b t) c h w").contiguous()
+        orig_images = einops.rearrange(orig_images, "b t c h w -> (b t) c h w").contiguous()
         detr_train_frames.mask = einops.rearrange(detr_train_frames.mask, "b t h w -> (b t) h w").contiguous()
         detr_no_grad_frames.tensors = einops.rearrange(detr_no_grad_frames.tensors, "b t c h w -> (b t) c h w").contiguous()
         detr_no_grad_frames.mask = einops.rearrange(detr_no_grad_frames.mask, "b t h w -> (b t) h w").contiguous()
@@ -407,6 +415,67 @@ def train_one_epoch(
         # Recover the order of the outputs:
         detr_outputs = tensor_dict_index_select(detr_outputs, index=detr_outputs_flatten_go_back_idxs, dim=0)
         detr_outputs = tensor_dict_index_select(detr_outputs, index=go_back_frame_idxs_flatten, dim=0)
+
+        # detr_outputs: dict_keys(['pred_logits', 'pred_boxes', 'aux_outputs', 'outputs'])
+        # detr_outputs['pred_logits'].shape: torch.Size([30, 300, 1])
+        # detr_outputs['pred_boxes'].shape: torch.Size([30, 300, 4])
+        # detr_outputs["outputs"].shape: torch.Size([30, 300, 256])
+
+        if step == 0 and epoch == 0:
+            # pick the first frame of the first sample just for a quick sanity check
+            img0 = images.tensors[0, 0]  # (C,H,W) normalized
+            mean = torch.tensor([0.485, 0.456, 0.406], device=img0.device)[:, None, None]
+            std  = torch.tensor([0.229, 0.224, 0.225], device=img0.device)[:, None, None]
+            img0_denorm = torch.clamp(img0 * std + mean, 0, 1)
+
+            orig_images0 = orig_images[:10]
+            print("Original image shape:", orig_images0.shape)
+            feat = model(orig_images=orig_images0, part="fastreid_predictor")
+            print("Feature shape:", feat.shape)
+            exit(1)
+
+            # --- save GT ---
+            gt_boxes = annotations[0][0]["bbox"]        # cxcywh in [0,1]
+            gt_labels = annotations[0][0]["category"]   # long
+            save_image_with_boxes(img0_denorm, gt_boxes, gt_labels,
+                                  "input_gt.png", title="GT")
+
+            # --- get DETR predictions for that frame ---
+            pred_logits = detr_outputs["pred_logits"][0]   # [num_queries, num_classes]
+            pred_boxes  = detr_outputs["pred_boxes"][0]    # [num_queries, 4]
+
+            probs = pred_logits.softmax(-1)                # class probs per query
+            scores, labels = probs.max(-1)                 # best class per query
+
+            # remove background & low-confidence
+            # NOTE: set this to your background (no-object) class index.
+            # Often it is the last index (num_classes-1). If your config has DETR_DEFAULT_CLASS_IDX, use it:
+            # bg_idx = config.get("DETR_DEFAULT_CLASS_IDX", probs.shape[-1] - 1)
+
+            conf_thresh = 0.5
+            keep = scores > conf_thresh
+            # keep = (labels != bg_idx) & (scores > conf_thresh)
+
+            # (optional) keep top-K by score AFTER thresholding
+            topk = 30
+            if keep.any():
+                kept_scores = scores[keep]
+                if kept_scores.numel() > topk:
+                    topk_idx = torch.topk(kept_scores, k=topk).indices
+                    # map back to original indexing
+                    keep_indices = torch.nonzero(keep, as_tuple=False).squeeze(1)
+                    keep_mask = torch.zeros_like(keep, dtype=torch.bool)
+                    keep_mask[keep_indices[topk_idx]] = True
+                    keep = keep_mask
+
+            pred_boxes_f = pred_boxes[keep]
+            labels_f = labels[keep]
+            scores_f = scores[keep]
+
+            save_image_with_boxes(img0_denorm, pred_boxes_f, labels_f,
+                                  "input_pred.png", scores=scores_f, title="DETR Predictions (filtered)")
+            exit(1)
+
 
         # DETR criterion:
         detr_loss_dict, detr_indices = detr_criterion(outputs=detr_outputs, targets=detr_targets_flatten, batch_len=detr_criterion_batch_len)

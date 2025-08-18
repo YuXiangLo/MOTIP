@@ -6,6 +6,15 @@ from models.deformable_detr.deformable_detr import build as build_deformable_det
 from models.motip.trajectory_modeling import TrajectoryModeling
 from models.motip.id_decoder import IDDecoder
 
+from fast_reid.fastreid.engine import DefaultPredictor
+from fast_reid.fastreid.config import get_cfg
+
+def setup_cfg(config):
+    cfg = get_cfg()
+    cfg.merge_from_file(config["FAST_REID_CONFIG_PATH"])
+    cfg.merge_from_list([])
+    cfg.freeze()
+    return cfg
 
 def build(config: dict):
     # Generate DETR args:
@@ -47,6 +56,13 @@ def build(config: dict):
         case _:
             raise NotImplementedError(f"DETR framework {config['DETR_FRAMEWORK']} is not supported.")
 
+    # Build Fast-ReID predictor:
+    cfg, fastreid_predictor = None, None
+    if config["USE_FAST_REID"]:
+        cfg = setup_cfg(config)
+        fastreid_predictor = DefaultPredictor(cfg)
+
+
     # Build each component:
     # 1. trajectory modeling (currently, only FFNs are used):
     _trajectory_modeling = TrajectoryModeling(
@@ -72,6 +88,7 @@ def build(config: dict):
         detr=detr,
         detr_framework=detr_framework,
         only_detr=config["ONLY_DETR"],
+        fastreid_predictor=fastreid_predictor,
         trajectory_modeling=_trajectory_modeling,
         id_decoder=_id_decoder,
     )

@@ -10,12 +10,14 @@ class MOTIP(nn.Module):
             detr: nn.Module,
             detr_framework: str,
             only_detr: bool,
+            fastreid_predictor: nn.Module,
             trajectory_modeling: nn.Module,
             id_decoder: nn.Module,
     ):
         super().__init__()
         self.detr = detr
         self.detr_framework = detr_framework
+        self.fastreid_predictor = fastreid_predictor
         self.only_detr = only_detr
         self.trajectory_modeling = trajectory_modeling
         self.id_decoder = id_decoder
@@ -39,6 +41,11 @@ class MOTIP(nn.Module):
                     )
                 else:
                     return self.detr(samples=frames)
+            case "fastreid_predictor":
+                orig_images = kwargs["orig_images"]
+                if self.fastreid_predictor is None:
+                    raise ValueError("Fast-ReID predictor is not initialized.")
+                return self.fastreid_predictor(orig_images)
             case "trajectory_modeling":
                 seq_info = kwargs["seq_info"]
                 return self.trajectory_modeling(seq_info)
