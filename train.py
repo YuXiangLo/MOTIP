@@ -1,5 +1,11 @@
 # Copyright (c) Ruopeng Gao. All Rights Reserved.
 
+# I am sick of the warnings from the torch library, so I will ignore them.
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, message=r".*weights_only.*")
+warnings.filterwarnings("ignore", category=UserWarning,  message=r".*torch\.meshgrid.*indexing.*")
+
+
 import os
 import math
 import torch
@@ -29,6 +35,7 @@ from utils.nested_tensor import NestedTensor
 from submit_and_evaluate import submit_and_evaluate_one_model
 
 from utils.save_image_with_boxes import save_image_with_boxes
+from utils.crop_boxes_bicubic import crop_boxes_bicubic
 
 
 def train_engine(config: dict):
@@ -421,61 +428,25 @@ def train_one_epoch(
         # detr_outputs['pred_boxes'].shape: torch.Size([30, 300, 4])
         # detr_outputs["outputs"].shape: torch.Size([30, 300, 256])
 
-        if step == 0 and epoch == 0:
-            # pick the first frame of the first sample just for a quick sanity check
-            img0 = images.tensors[0, 0]  # (C,H,W) normalized
-            mean = torch.tensor([0.485, 0.456, 0.406], device=img0.device)[:, None, None]
-            std  = torch.tensor([0.229, 0.224, 0.225], device=img0.device)[:, None, None]
-            img0_denorm = torch.clamp(img0 * std + mean, 0, 1)
 
-            orig_images0 = orig_images[:10]
-            print("Original image shape:", orig_images0.shape)
-            feat = model(orig_images=orig_images0, part="fastreid_predictor")
-            print("Feature shape:", feat.shape)
-            exit(1)
-
-            # --- save GT ---
-            gt_boxes = annotations[0][0]["bbox"]        # cxcywh in [0,1]
-            gt_labels = annotations[0][0]["category"]   # long
-            save_image_with_boxes(img0_denorm, gt_boxes, gt_labels,
-                                  "input_gt.png", title="GT")
-
-            # --- get DETR predictions for that frame ---
-            pred_logits = detr_outputs["pred_logits"][0]   # [num_queries, num_classes]
-            pred_boxes  = detr_outputs["pred_boxes"][0]    # [num_queries, 4]
-
-            probs = pred_logits.softmax(-1)                # class probs per query
-            scores, labels = probs.max(-1)                 # best class per query
-
-            # remove background & low-confidence
-            # NOTE: set this to your background (no-object) class index.
-            # Often it is the last index (num_classes-1). If your config has DETR_DEFAULT_CLASS_IDX, use it:
-            # bg_idx = config.get("DETR_DEFAULT_CLASS_IDX", probs.shape[-1] - 1)
-
-            conf_thresh = 0.5
-            keep = scores > conf_thresh
-            # keep = (labels != bg_idx) & (scores > conf_thresh)
-
-            # (optional) keep top-K by score AFTER thresholding
-            topk = 30
-            if keep.any():
-                kept_scores = scores[keep]
-                if kept_scores.numel() > topk:
-                    topk_idx = torch.topk(kept_scores, k=topk).indices
-                    # map back to original indexing
-                    keep_indices = torch.nonzero(keep, as_tuple=False).squeeze(1)
-                    keep_mask = torch.zeros_like(keep, dtype=torch.bool)
-                    keep_mask[keep_indices[topk_idx]] = True
-                    keep = keep_mask
-
-            pred_boxes_f = pred_boxes[keep]
-            labels_f = labels[keep]
-            scores_f = scores[keep]
-
-            save_image_with_boxes(img0_denorm, pred_boxes_f, labels_f,
-                                  "input_pred.png", scores=scores_f, title="DETR Predictions (filtered)")
-            exit(1)
-
+        with torch.no_grad():
+            crops = crop_boxes_bicubic(orig_images, detr_outputs["pred_boxes"], out_h=384, out_w=128, batch_rois=256, no_grad=True)
+            BT, Q, C, H, W = crops.shape
+            crops = einops.rearrange(crops, "b q c h w -> (b q) c h w").contiguous()
+            
+            batch_size = 768 # 768 is a good number for RTX 3090, 24GB GPU.
+            all_outputs = []
+            with torch.no_grad():
+                for i in range(0, crops.shape[0], batch_size):
+                    batch_crops = crops[i:i + batch_size]
+                    outputs = model(orig_images=batch_crops, part="fastreid_predictor").to(detr_outputs["outputs"].device)
+                    all_outputs.append(outputs)
+            fastreid_predictor_outputs = torch.cat(all_outputs, dim=0)  # (BT*Q, D)
+            
+            # reshape fastreid_predictor_outputs to (BT, Q, D)
+            fastreid_predictor_outputs = einops.rearrange(fastreid_predictor_outputs, "(b q) d -> b q d", b=BT, q=Q)
+            # concat the fastreid_predictor_outputs to the detr_outputs
+            detr_outputs["outputs"] = torch.cat([detr_outputs["outputs"], fastreid_predictor_outputs], dim=-1)
 
         # DETR criterion:
         detr_loss_dict, detr_indices = detr_criterion(outputs=detr_outputs, targets=detr_targets_flatten, batch_len=detr_criterion_batch_len)
