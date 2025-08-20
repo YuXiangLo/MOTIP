@@ -429,24 +429,28 @@ def train_one_epoch(
         # detr_outputs["outputs"].shape: torch.Size([30, 300, 256])
 
 
-        with torch.no_grad():
-            crops = crop_boxes_bicubic(orig_images, detr_outputs["pred_boxes"], out_h=384, out_w=128, batch_rois=256, no_grad=True)
-            BT, Q, C, H, W = crops.shape
-            crops = einops.rearrange(crops, "b q c h w -> (b q) c h w").contiguous()
+        # with torch.no_grad():
+        #     crops = crop_boxes_bicubic(orig_images, detr_outputs["pred_boxes"], out_h=384, out_w=128, batch_rois=128, no_grad=True)
+        #     BT, Q, C, H, W = crops.shape
+        #     crops = einops.rearrange(crops, "b q c h w -> (b q) c h w").contiguous()
             
-            batch_size = 768 # 768 is a good number for RTX 3090, 24GB GPU.
-            all_outputs = []
-            with torch.no_grad():
-                for i in range(0, crops.shape[0], batch_size):
-                    batch_crops = crops[i:i + batch_size]
-                    outputs = model(orig_images=batch_crops, part="fastreid_predictor").to(detr_outputs["outputs"].device)
-                    all_outputs.append(outputs)
-            fastreid_predictor_outputs = torch.cat(all_outputs, dim=0)  # (BT*Q, D)
+        #     batch_size = 512 # 512 is a good number for RTX 3090, 24GB GPU.
+        #     all_outputs = []
+        #     with torch.no_grad():
+        #         for i in range(0, crops.shape[0], batch_size):
+        #             batch_crops = crops[i:i + batch_size]
+        #             outputs = model(orig_images=batch_crops, part="fastreid_predictor")
+        #             all_outputs.append(outputs)
+        #     fastreid_predictor_outputs = torch.cat(all_outputs, dim=0)  # (BT*Q, D)
             
-            # reshape fastreid_predictor_outputs to (BT, Q, D)
-            fastreid_predictor_outputs = einops.rearrange(fastreid_predictor_outputs, "(b q) d -> b q d", b=BT, q=Q)
-            # concat the fastreid_predictor_outputs to the detr_outputs
-            detr_outputs["outputs"] = torch.cat([detr_outputs["outputs"], fastreid_predictor_outputs], dim=-1)
+        #     # reshape fastreid_predictor_outputs to (BT, Q, D)
+        #     fastreid_predictor_outputs = einops.rearrange(fastreid_predictor_outputs, "(b q) d -> b q d", b=BT, q=Q)
+
+        # # concat the fastreid_predictor_outputs to the detr_outputs
+        # # detr_outputs["outputs"] = torch.cat([detr_outputs["outputs"], fastreid_predictor_outputs], dim=-1)
+
+        # # Directly add the fastreid feature to detr embeddings
+        # detr_outputs["outputs"] += fastreid_predictor_outputs
 
         # DETR criterion:
         detr_loss_dict, detr_indices = detr_criterion(outputs=detr_outputs, targets=detr_targets_flatten, batch_len=detr_criterion_batch_len)

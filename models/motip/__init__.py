@@ -8,6 +8,7 @@ from models.motip.id_decoder import IDDecoder
 
 from fast_reid.fastreid.engine import DefaultPredictor
 from fast_reid.fastreid.config import get_cfg
+import torch.nn as nn
 
 def setup_cfg(config):
     cfg = get_cfg()
@@ -60,8 +61,21 @@ def build(config: dict):
     cfg, fastreid_predictor = None, None
     if config["USE_FAST_REID"]:
         cfg = setup_cfg(config)
-        fastreid_predictor = DefaultPredictor(cfg)
+        _fastreid_predictor = DefaultPredictor(cfg)
 
+    # Build Fast-ReID adaptor:
+    class FastReidAdaptor(nn.Module):
+        def __init__(self, in_dim = 2048, out_dim=config["FEATURE_DIM"]):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, (in_dim + out_dim) // 2),
+                nn.ReLU(),
+                nn.Linear((in_dim + out_dim) // 2, out_dim)
+            )
+        def forward(self, x):
+            return self.net(x)
+
+    _fastreid_adaptor = FastReidAdaptor(in_dim=2048, out_dim=config["FEATURE_DIM"]).to(config["DEVICE"])
 
     # Build each component:
     # 1. trajectory modeling (currently, only FFNs are used):
@@ -88,7 +102,8 @@ def build(config: dict):
         detr=detr,
         detr_framework=detr_framework,
         only_detr=config["ONLY_DETR"],
-        fastreid_predictor=fastreid_predictor,
+        fastreid_predictor=_fastreid_predictor,
+        fastreid_adapter=_fastreid_adaptor,
         trajectory_modeling=_trajectory_modeling,
         id_decoder=_id_decoder,
     )
