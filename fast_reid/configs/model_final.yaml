@@ -134,7 +134,7 @@ MODEL:
   - 57.120000000000005
   - 57.375
   QUEUE_SIZE: 8192
-  WEIGHTS: '/home/b08901172/.yuxiang/OinkTrack-reid-logs/model_final.pth'
+  WEIGHTS: '/home/master/14/yuxiang/OinkTrack-reid-logs/model_final.pth'
 OUTPUT_DIR: fast_reid/logs/dancetrack/sbs_S50
 SOLVER:
   AMP:

@@ -28,7 +28,7 @@ def main():
         "--config-file", 
         required=False, 
         help="path to config.yml",
-        default='/home/b08901172/.yuxiang/OinkTrack-reid-logs/config.yaml'
+        default='/home/master/14/yuxiang/OinkTrack-reid-logs/config.yaml'
     )
     parser.add_argument(
         "--opts",

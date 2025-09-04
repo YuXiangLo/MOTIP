@@ -70,6 +70,8 @@ def build(config: dict):
             self.net = nn.Sequential(
                 nn.Linear(in_dim, (in_dim + out_dim) // 2),
                 nn.ReLU(),
+                nn.Linear((in_dim + out_dim) // 2, (in_dim + out_dim) // 2),
+                nn.ReLU(),
                 nn.Linear((in_dim + out_dim) // 2, out_dim)
             )
         def forward(self, x):
@@ -103,7 +105,7 @@ def build(config: dict):
         detr_framework=detr_framework,
         only_detr=config["ONLY_DETR"],
         fastreid_predictor=_fastreid_predictor,
-        fastreid_adapter=_fastreid_adaptor,
+        fastreid_adaptor=_fastreid_adaptor,
         trajectory_modeling=_trajectory_modeling,
         id_decoder=_id_decoder,
     )

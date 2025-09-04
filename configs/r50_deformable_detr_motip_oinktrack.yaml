@@ -85,7 +85,7 @@ DETR_SET_COST_GIOU: 2.0
 DETR_CRITERION_BATCH_LEN: 10
 # Fast-ReID:
 USE_FAST_REID: True
-FAST_REID_CONFIG_PATH: /home/b08901172/.yuxiang/MOTIP/fast_reid/configs/model_final.yaml
+FAST_REID_CONFIG_PATH: /home/master/14/yuxiang/MOTIP/fast_reid/configs/model_final.yaml
 
 # Training strategies:
 BATCH_SIZE: 1

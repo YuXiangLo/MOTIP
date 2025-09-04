@@ -1,5 +1,6 @@
 # Copyright (c) Ruopeng Gao. All Rights Reserved.
 
+import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
@@ -11,7 +12,7 @@ class MOTIP(nn.Module):
             detr_framework: str,
             only_detr: bool,
             fastreid_predictor: nn.Module,
-            fastreid_adapter: nn.Module,
+            fastreid_adaptor: nn.Module,
             trajectory_modeling: nn.Module,
             id_decoder: nn.Module,
     ):
@@ -19,7 +20,7 @@ class MOTIP(nn.Module):
         self.detr = detr
         self.detr_framework = detr_framework
         self.fastreid_predictor = fastreid_predictor
-        self.fastreid_adapter = fastreid_adapter
+        self.fastreid_adaptor = fastreid_adaptor
         self.only_detr = only_detr
         self.trajectory_modeling = trajectory_modeling
         self.id_decoder = id_decoder
@@ -47,7 +48,9 @@ class MOTIP(nn.Module):
                 orig_images = kwargs["orig_images"]
                 if self.fastreid_predictor is None:
                     raise ValueError("Fast-ReID predictor is not initialized.")
-                return self.fastreid_adapter(self.fastreid_predictor(orig_images))
+                with torch.no_grad():
+                    reid_feat = self.fastreid_predictor(orig_images)
+                return self.fastreid_adaptor(reid_feat)
             case "trajectory_modeling":
                 seq_info = kwargs["seq_info"]
                 return self.trajectory_modeling(seq_info)
