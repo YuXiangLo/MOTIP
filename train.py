@@ -448,8 +448,6 @@ def train_one_epoch(
         # concat the fastreid_predictor_outputs to the detr_outputs
         # detr_outputs["outputs"] = torch.cat([detr_outputs["outputs"], fastreid_predictor_outputs], dim=-1)
 
-        # Directly add the fastreid feature to detr embeddings
-        detr_outputs["outputs"] += fastreid_predictor_outputs
 
         # DETR criterion:
         detr_loss_dict, detr_indices = detr_criterion(outputs=detr_outputs, targets=detr_targets_flatten, batch_len=detr_criterion_batch_len)
@@ -457,6 +455,11 @@ def train_one_epoch(
         # Whether to only train the DETR, OR to train the MOTIP together:
         if not only_detr:
             _G, _, _N = annotations[0][0]["trajectory_id_labels"].shape
+
+            # fix: add fastreid after detr_criterion
+            # Directly add the fastreid feature to detr embeddings
+            detr_outputs["outputs"] += fastreid_predictor_outputs
+
             # Need to prepare for MOTIP:
             seq_info = prepare_for_motip(
                 detr_outputs=detr_outputs, annotations=annotations, detr_indices=detr_indices,

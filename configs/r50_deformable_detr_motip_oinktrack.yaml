@@ -139,7 +139,7 @@ USE_WANDB: True             # use wandb or not
 EXP_OWNER: linus13514
 EXP_PROJECT: MOTIP
 EXP_GROUP: subset-exp
-EXP_NAME: MOTIP-baseline
+EXP_NAME: fix-fastreid
 GIT_VERSION:
 SAVE_CHECKPOINT_PER_EPOCH: 1
 MULTI_LAST_CHECKPOINTS: 0
