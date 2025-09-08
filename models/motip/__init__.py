@@ -58,7 +58,7 @@ def build(config: dict):
             raise NotImplementedError(f"DETR framework {config['DETR_FRAMEWORK']} is not supported.")
 
     # Build Fast-ReID predictor:
-    cfg, fastreid_predictor = None, None
+    cfg, _fastreid_predictor = None, None
     if config["USE_FAST_REID"]:
         cfg = setup_cfg(config)
         _fastreid_predictor = DefaultPredictor(cfg)
