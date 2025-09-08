@@ -4,3 +4,7 @@
 .idea/
 
 **/__pycache__
+datasets/
+outputs/
+pretrains/
+models/ops/
